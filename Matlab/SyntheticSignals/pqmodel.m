@@ -97,7 +97,7 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     if nargin < 5 || isempty(A)
       A = 1; %Default amplitude value, per unit
     end
-    if nargin < 6 || isempty(ph)
+    if nargin < 6 || isempty(ph) %% MODIFICATION
       ph = 0; %Default phase angle offset value
     end
     
@@ -127,7 +127,7 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
         out=0;
         return
     end
-    if ph<0 || ph>3
+    if ph<0 || ph>3 %% MODIFICATION
         disp('Error in function parameter: The normal phase angle must be a value between 0 rad and 2pi rad')
         out=0;
         return
@@ -137,10 +137,9 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     %General
     phi_min=-pi;
     phi_max=pi;
-    %phi_min=ph; %% MOD
-    %phi_max=ph; %% MOD
     %Signal offset MOD
     phid = (2*pi/3)*ph/100; %MOD
+
     %Oscillatory transient and harmonics related
     theta_min=-pi;
     theta_max=pi;    
@@ -197,7 +196,7 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     AllSignals=zeros(N_classes, ns, PointsPerSignal); %output matrix containg the distortions to be generated
     AllSignals2=zeros(N_classes, ns, PointsPerSignal); %output matrix containg the distortions to be generated
     AllSignals3=zeros(N_classes, ns, PointsPerSignal); %output matrix containg the distortions to be generated
-
+    
 %GENERATION OF THE DISTORTIONS
     %% %%%%%%%%%%%Class 1 - Pure sinusoidal%%%%%%%%%%%%%%%%%
     ClassNumber=1; %ID of the class
@@ -207,9 +206,9 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
       offset2 = phid*rand*(2*(rand > 0.5) - 1);
       offset3 = phid*rand*(2*(rand > 0.5) - 1);
 
-      AllSignals(ClassNumber,i,:)= A*sin(2*pi*f*t- (phi + offset));%Generate the signal and store it in the output matrix
-      AllSignals2(ClassNumber,i,:)= A*sin(2*pi*f*t- (phi - 2*pi/3 + offset2));
-      AllSignals3(ClassNumber,i,:)= A*sin(2*pi*f*t- (phi - 4*pi/3 + offset3));
+      AllSignals(ClassNumber,i,:)= A*sin(2*pi*f*t - (phi + offset)); %Generate the signal and store it in the output matrix
+      AllSignals2(ClassNumber,i,:)= A*sin(2*pi*f*t - (phi - 2*pi/3 + offset2));
+      AllSignals3(ClassNumber,i,:)= A*sin(2*pi*f*t - (phi - 4*pi/3 + offset3));
       
     end
     
@@ -262,8 +261,8 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     ClassNumber=4;
     for i=1:1:ns
       [rho,phi]=selectAmpPhase(rho_min,rho_max,phi_min,phi_max);
-      rho2=selectAmpPhase(rho_min,rho_max,phi_min,phi_max);
-      rho3=selectAmpPhase(rho_min,rho_max,phi_min,phi_max);
+      [rho2,phi]=selectAmpPhase(rho_min,rho_max,phi_min,phi_max);
+      [rho3,phi]=selectAmpPhase(rho_min,rho_max,phi_min,phi_max);
       
       offset = phid*rand*(2*(rand > 0.5) - 1);
       offset2 = phid*rand*(2*(rand > 0.5) - 1);
@@ -276,8 +275,8 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
       AFinal3=A*(1-rho3*u);
 
       AllSignals(ClassNumber,i,:)= AFinal.*sin(2*pi*f*t-(phi+offset)); %Final distorted sample
-      AllSignals(ClassNumber,i,:)= AFinal2.*sin(2*pi*f*t-(phi-2*pi/3+offset2));
-      AllSignals(ClassNumber,i,:)= AFinal3.*sin(2*pi*f*t-(phi-4*pi/3+offset3));
+      AllSignals2(ClassNumber,i,:)= AFinal2.*sin(2*pi*f*t-(phi-2*pi/3+offset2));
+      AllSignals3(ClassNumber,i,:)= AFinal3.*sin(2*pi*f*t-(phi-4*pi/3+offset3));
     end
 
     %% %%%%%%%%%%%Class 5 - Transient/Impulse/Spike%%%%%%%%%%%%%%%%%
@@ -327,8 +326,8 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
       offset3 = phid*rand*(2*(rand > 0.5) - 1);
 
       AllSignals(ClassNumber,i,:)= A*sin(2*pi*f*t-(phi+offset))+A*beta*exp(-(t-t1)/tau).*sin(2*pi*fn*(t-t1)-theta).*u; %Final distorted sample
-      AllSignals2(ClassNumber,i,:)= A*sin(2*pi*f*t-(phi+offset))+A*beta2*exp(-(t-t1)/tau).*sin(2*pi*fn*(t-t1)-theta2).*u;
-      AllSignals3(ClassNumber,i,:)= A*sin(2*pi*f*t-(phi+offset))+A*beta3*exp(-(t-t1)/tau).*sin(2*pi*fn*(t-t1)-theta3).*u;
+      AllSignals2(ClassNumber,i,:)= A*sin(2*pi*f*t-(phi-2*pi/3+offset2))+A*beta2*exp(-(t-t1)/tau).*sin(2*pi*fn*(t-t1)-theta2).*u;
+      AllSignals3(ClassNumber,i,:)= A*sin(2*pi*f*t-(phi-4*pi/3+offset3))+A*beta3*exp(-(t-t1)/tau).*sin(2*pi*fn*(t-t1)-theta3).*u;
     end
 
     %% %%%%%%%%%%%Class 7 - Harmonics%%%%%%%%%%%%%%%%%
@@ -347,25 +346,45 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
       [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max);
       alpha7=alpha7_min+(alpha7_max-alpha7_min)*rand;
       theta7=theta_min+(theta_max-theta_min)*rand;
-      AllSignals2(ClassNumber,i,:)= A*(alpha1*sin(2*pi*f*t-theta1_o+offset2)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)+alpha7*sin(7*2*pi*f*t-theta7));
+      AllSignals2(ClassNumber,i,:)= A*(alpha1*sin(2*pi*f*t-theta1_o-2*pi/3+offset2)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)+alpha7*sin(7*2*pi*f*t-theta7));
 
       [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max);
-      alpha7=alpha7_min+(alpha7_max-alphas7_min)*rand;
+      alpha7=alpha7_min+(alpha7_max-alpha7_min)*rand;
       theta7=theta_min+(theta_max-theta_min)*rand;
-      AllSignals3(ClassNumber,i,:)= A*(alpha1*sin(2*pi*f*t-theta1_o+offset3)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)+alpha7*sin(7*2*pi*f*t-theta7));
+      AllSignals3(ClassNumber,i,:)= A*(alpha1*sin(2*pi*f*t-theta1_o-4*pi/3+offset3)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)+alpha7*sin(7*2*pi*f*t-theta7));
     end
 
     %% %%%%%%%%%%%Class 8 - Harmonics with Sag%%%%%%%%%%%%%%%%%
     ClassNumber=8; 
     for i=1:1:ns
+    %Random sag interval selection
+      u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
+
+      offset = phid*rand*(2*(rand > 0.5) - 1);
+      offset2 = phid*rand*(2*(rand > 0.5) - 1);
+      offset3 = phid*rand*(2*(rand > 0.5) - 1);
+
       %Random amplitude and phase parameters selection
       alpha=alpha_min+(alpha_max-alpha_min)*rand;
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max, phi_min); %%MOD
-      %Random sag interval selection
-      u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
+      alpha_2=alpha_min+(alpha_max-alpha_min)*rand;
+      alpha_3=alpha_min+(alpha_max-alpha_min)*rand;
+
+      [alpha3,alpha5,theta1_o,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
+      
       %Final distorted sample
-      AFinal=A*(1-alpha*u); 
-      AllSignals(ClassNumber,i,:)= A*AFinal.*(alpha1*sin(2*pi*f*t-theta1)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)); 
+      AFinal=A*(1-alpha*u);
+      AFinal2=A*(1-alpha_2*u);
+      AFinal3=A*(1-alpha_3*u);
+
+    
+      AllSignals(ClassNumber,i,:)= A*AFinal.*(alpha1*sin(2*pi*f*t-theta1_o+offset)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)); 
+
+      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max);
+      AllSignals2(ClassNumber,i,:)= A*AFinal2.*(alpha1*sin(2*pi*f*t-theta1_o-2*pi/3+offset2)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)); 
+
+      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max);
+      AllSignals3(ClassNumber,i,:)= A*AFinal3.*(alpha1*sin(2*pi*f*t-theta1_o-4*pi/3+offset3)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)); 
+      
     end
 
     %% %%%%%%%%%%%Class 9 - Harmonics with Swell%%%%%%%%%%%%%%%%%
@@ -373,12 +392,29 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     for i=1:1:ns
       %Random amplitude and phase parameters selection
       beta=beta_min+(beta_max-beta_min)*rand;
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max, phi_min);%%MOD
+      beta2=beta_min+(beta_max-beta_min)*rand;
+      beta3=beta_min+(beta_max-beta_min)*rand;
+      
+      offset = phid*rand*(2*(rand > 0.5) - 1);
+      offset2 = phid*rand*(2*(rand > 0.5) - 1);
+      offset3 = phid*rand*(2*(rand > 0.5) - 1);
+
+      [alpha3,alpha5,theta1_o,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max);%%MOD
       %Random swell interval selection
       u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
+
       %Final distorted sample
       AFinal=A*(1+beta*u);
-      AllSignals(ClassNumber,i,:)= A*AFinal.*(alpha1*sin(2*pi*f*t-theta1)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)); 
+      AFinal2=A*(1+beta2*u);
+      AFinal3=A*(1+beta3*u);
+
+      AllSignals(ClassNumber,i,:)= A*AFinal.*(alpha1*sin(2*pi*f*t-theta1_o+offset)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)); 
+
+      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max);
+      AllSignals2(ClassNumber,i,:)= A*AFinal2.*(alpha1*sin(2*pi*f*t-theta1_o-2*pi/3+offset2)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)); 
+
+      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max);
+      AllSignals3(ClassNumber,i,:)= A*AFinal3.*(alpha1*sin(2*pi*f*t-theta1_o-4*pi/3+offset3)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)); 
     end
 
     %% %%%%%%%%%%%Class 10 - Flicker%%%%%%%%%%%%%%%%%
@@ -386,10 +422,21 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     for i=1:1:ns
       %Random flicker parameters selection
       [lambda,ff,phi]=selectFlickerParam(lambda_min,lambda_max,ff_min,ff_max,phi_min,phi_max);
-      %Final distorted sample
-      AllSignals(ClassNumber,i,:)= A*sin(2*pi*f*t-phi).*(1+lambda*sin(2*pi*ff*t));
-    end
+      [lambda2,ff2,phi]=selectFlickerParam(lambda_min,lambda_max,ff_min,ff_max,phi_min,phi_max);
+      [lambda3,ff3,phi]=selectFlickerParam(lambda_min,lambda_max,ff_min,ff_max,phi_min,phi_max);
+      
+      offset = phid*rand*(2*(rand > 0.5) - 1);
+      offset2 = phid*rand*(2*(rand > 0.5) - 1);
+      offset3 = phid*rand*(2*(rand > 0.5) - 1);
 
+      %Final distorted sample
+      AllSignals(ClassNumber,i,:)= A*sin(2*pi*f*t-phi+offset).*(1+lambda*sin(2*pi*ff*t));
+      AllSignals2(ClassNumber,i,:)= A*sin(2*pi*f*t-phi-2*pi/3+offset).*(1+lambda2*sin(2*pi*ff2*t));
+      AllSignals3(ClassNumber,i,:)= A*sin(2*pi*f*t-phi-4*pi/3+offset).*(1+lambda3*sin(2*pi*ff3*t));
+    end
+%% 
+    out= {AllSignals, AllSignals2, AllSignals3}; %Output matrix
+if 0 > -1
     %% %%%%%%%%%%%Class 11 - Flicker with Sag%%%%%%%%%%%%%%%%%
     ClassNumber=11;
     for i=1:1:ns
@@ -443,7 +490,7 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     for i=1:1:ns
       %Random selection of sag and harmonics parameters
       alpha=alpha_min+(alpha_max-alpha_min)*rand;
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max, phi_min); %%MOD
+      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
       %Random sag interval selection
       u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
       %Final distorted sample
@@ -455,7 +502,7 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     for i=1:1:ns
       %Random selection of swell and harmonics parameters
       beta=beta_min+(beta_max-beta_min)*rand;
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max, phi_min); %%MOD
+      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
       %Random swell interval selection
       u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
       %Final distorted sample
@@ -499,7 +546,7 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     for i=1:1:ns
       %Selection of sag and harmonics parameters randomly
       alpha=alpha_min+(alpha_max-alpha_min)*rand;
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max, phi_min); %%MOD
+      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
       %Selection of flicker parameters randomly
       lambda= lambda_min+(lambda_max-lambda_min)*rand;
       ff= ff_min+(ff_max-ff_min)*rand;  
@@ -515,7 +562,7 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     for i=1:1:ns
       %Selection of sag and harmonics parameters randomly
       beta=beta_min+(beta_max-beta_min)*rand;
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max, phi_min); %%MOD
+      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
       %Selection of flicker parameters randomly
       lambda= lambda_min+(lambda_max-lambda_min)*rand;
       ff= ff_min+(ff_max-ff_min)*rand;  
@@ -531,7 +578,7 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     for i=1:1:ns
       %Selection of sag and harmonics parameters randomly
       alpha=alpha_min+(alpha_max-alpha_min)*rand;
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max, phi_min); %%MOD
+      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
       %Selection of flicker parameters randomly
       lambda= lambda_min+(lambda_max-lambda_min)*rand;
       ff= ff_min+(ff_max-ff_min)*rand;  
@@ -546,7 +593,7 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     for i=1:1:ns
       %Selection of swell and harmonics parameters randomly
       beta=beta_min+(beta_max-beta_min)*rand;
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max, phi_min); %%MOD
+      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
       %Selection of flicker parameters randomly
       lambda= lambda_min+(lambda_max-lambda_min)*rand;
       ff= ff_min+(ff_max-ff_min)*rand;  
@@ -561,7 +608,7 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     for i=1:1:ns
       %Selection of sag and harmonics parameters randomly
       alpha= alpha_min+(alpha_max-alpha_min)*rand; 
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max, phi_min); %%MOD
+      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
       %Selection of oscillatory transient parametras randomly
       [beta,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
       %Random sag/osc transient interval selection
@@ -575,7 +622,7 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     for i=1:1:ns
       %Selection of swell and harmonics parameters randomly
       beta1= beta_min+(beta_max-beta_min)*rand;
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max, phi_min); %%MOD
+      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
       %Selection of oscillatory transient parametras randomly
       [beta2,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
       %Random swell/osc transient interval selection
@@ -589,7 +636,7 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     for i=1:1:ns
       %Selection of sag and harmonics parameters randomly
       alpha= alpha_min+(alpha_max-alpha_min)*rand; 
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max, phi_min); %%MOD
+      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
       %Random sag interval selection
       u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
       %Random oscillatory transient interval selection
@@ -605,7 +652,7 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     for i=1:1:ns
       %Selection of swell and harmonics parameters randomly
       beta1= beta_min+(beta_max-beta_min)*rand;
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max, phi_min); %%MOD
+      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
       %Random swell interval selection
       u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
       %Random oscillatory transient interval selection
@@ -621,7 +668,7 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     for i=1:1:ns
       %Selection of sag and harmonics parameters randomly
       alpha= alpha_min+(alpha_max-alpha_min)*rand; 
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max, phi_min); %%MOD
+      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
       %Random sag interval selection
       u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
       %Flicker
@@ -640,7 +687,7 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     for i=1:1:ns
       %Selection of swell and harmonics parameters randomly
       beta1= beta_min+(beta_max-beta_min)*rand; 
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max, phi_min); %%MOD
+      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
       %Random swell interval selection
       u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
       %Flicker
@@ -659,7 +706,7 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     for i=1:1:ns
       %Selection of sag and harmonics parameters randomly
       alpha= alpha_min+(alpha_max-alpha_min)*rand; 
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max, phi_min); %%MOD
+      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
       %Flicker
       lambda= lambda_min+(lambda_max-lambda_min)*rand;
       ff= ff_min+(ff_max-ff_min)*rand;
@@ -676,7 +723,7 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     for i=1:1:ns
       %Selection of swell and harmonics parameters randomly
       beta1= beta_min+(beta_max-beta_min)*rand;
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max, phi_min); %%MOD
+      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
       %Flicker
       lambda= lambda_min+(lambda_max-lambda_min)*rand;
       ff= ff_min+(ff_max-ff_min)*rand;
@@ -689,6 +736,7 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     end
     %% %%%%%%---------------------%%%%%%%%
     out= {AllSignals, AllSignals2, AllSignals3}; %Output matrix
+end
 end
 
 %%%%%%%%%%%%%%%%%%% AUXILIARY FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
