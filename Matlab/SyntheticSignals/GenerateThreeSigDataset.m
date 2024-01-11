@@ -5,18 +5,17 @@
 % a wide array of power quality signals, encompassing various disturbances 
 % like voltage sags, swells, harmonics, transients, and interruptions.
 
-numPhases = 3;
-numSignals = 30;
-SignalLenght = 10000;
+numSignals = 50;
+sampligFrequency = 10000;
 
-f = 50;
-n = 5;
-A = 400;
-ang_offset_per = 3;
+f = 50; % Singal frequency
+n = 5; % Number of cycles per sample
+A = 400; % Signal Amplitud
+unbalance = 3; % percentage of unbalance
 
-dataset = pqmodel(numSignals, SignalLenght, f, n, A, ang_offset_per);
+dataset = pqmodel(numSignals, sampligFrequency, f, n, A, unbalance, true);
 
-name = sprintf('DatasetThreePSignal_10types.mat');
+name = sprintf('DatasetThreePSignal_Noise.mat');
 save(name, "dataset");
 
 

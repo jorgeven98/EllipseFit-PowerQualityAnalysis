@@ -19,7 +19,7 @@
 %    Please, CITE THE PAPER referenced above if you use or modify this
 %    program
 
-function [out] = pqmodel(ns, fs, f, n, A, ph)
+function [out] = pqmodel(ns, fs, f, n, A, un, noise)
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%-------------%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %This function generates distorted signals following several power quality
     %models. This function is the implementation of the integral model found in:
@@ -97,8 +97,11 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     if nargin < 5 || isempty(A)
       A = 1; %Default amplitude value, per unit
     end
-    if nargin < 6 || isempty(ph) %% MODIFICATION
-      ph = 0; %Default phase angle offset value
+    if nargin < 6 || isempty(un) %% MODIFICATION
+      un = 0; %Default unbalance percentage
+    end
+    if nargin < 7 || isempty(noise) %% MODIFICATION
+      noise = false; %Default unbalance percentage
     end
     
     %Check that configurable parameters are within permitted limits
@@ -127,7 +130,7 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
         out=0;
         return
     end
-    if ph<0 || ph>3 %% MODIFICATION
+    if un<0 || un>3 %% MODIFICATION
         disp('Error in function parameter: The normal phase angle must be a value between 0 rad and 2pi rad')
         out=0;
         return
@@ -138,7 +141,7 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     phi_min=-pi;
     phi_max=pi;
     %Signal offset MOD
-    phid = (2*pi/3)*ph/100; %MOD
+    phid = (2*pi/3)*un/100; %MOD
 
     %Oscillatory transient and harmonics related
     theta_min=-pi;
@@ -187,332 +190,320 @@ function [out] = pqmodel(ns, fs, f, n, A, ph)
     tc_min=0;
     tdminustc_min=0.01*(1/f);
     tdminustc_max=0.05*(1/f);
+    %Noise related
+    nrs_min = 15;
+    nrs_max = 30;
     
 %General variables
     N_classes=29; %Total number of different disturbances to simulate
     PointsPerSignal=(fs/f)*n;%number of points contained in a signal to be generated
     t=0:(1/fs):((1/f)*n-(1/fs)); %time vector for all signals
 
-    AllSignals=zeros(N_classes, ns, PointsPerSignal); %output matrix containg the distortions to be generated
-    AllSignals2=zeros(N_classes, ns, PointsPerSignal); %output matrix containg the distortions to be generated
-    AllSignals3=zeros(N_classes, ns, PointsPerSignal); %output matrix containg the distortions to be generated
+    % AllSignals=zeros(N_classes, PointsPerSignal, ns); %output matrix containg the distortions to be generated
+    % AllSignals2=zeros(N_classes, PointsPerSignal, ns); %output matrix containg the distortions to be generated
+    % AllSignals3=zeros(N_classes, PointsPerSignal, ns); %output matrix containg the distortions to be generated
+    out = {zeros(N_classes, PointsPerSignal, ns),zeros(N_classes, PointsPerSignal, ns),zeros(N_classes, PointsPerSignal, ns)};
+
+    phases = [0, 2*pi/3, 2*pi/4];
     
 %GENERATION OF THE DISTORTIONS
     %% %%%%%%%%%%%Class 1 - Pure sinusoidal%%%%%%%%%%%%%%%%%
     ClassNumber=1; %ID of the class
     for i=1:1:ns %In each iteration a sample is generated
       phi= phi_min+(phi_max-phi_min)*rand; %Select randomly a number between phi_min and phi_max. In general, you can generate N random numbers in the interval (a,b) with the formula r = a + (b-a).*rand(N,1). 
-      offset = phid*rand*(2*(rand > 0.5) - 1);
-      offset2 = phid*rand*(2*(rand > 0.5) - 1);
-      offset3 = phid*rand*(2*(rand > 0.5) - 1);
-
-      AllSignals(ClassNumber,i,:)= A*sin(2*pi*f*t - (phi + offset)); %Generate the signal and store it in the output matrix
-      AllSignals2(ClassNumber,i,:)= A*sin(2*pi*f*t - (phi - 2*pi/3 + offset2));
-      AllSignals3(ClassNumber,i,:)= A*sin(2*pi*f*t - (phi - 4*pi/3 + offset3));
       
+      for j=1:3
+
+          offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+
+          out{j}(ClassNumber,:,i) = A*sin(2*pi*f*t - (phi + offset)); %Generate the signal and store it in the output matrix
+    
+      end
     end
     
     %% %%%%%%%%%%%Class 2 - Sag%%%%%%%%%%%%%%%%%
     ClassNumber=2;
     for i=1:1:ns
-      [alpha,phi]=selectAmpPhase(alpha_min,alpha_max,phi_min,phi_max);%Select the sag parameters randomly
-      alpha2=selectAmpPhase(alpha_min,alpha_max,phi_min,phi_max);%Select the sag parameters randomly
-      alpha3=selectAmpPhase(alpha_min,alpha_max,phi_min,phi_max);%Select the sag parameters randomly
-      
-      offset = phid*rand*(2*(rand > 0.5) - 1);
-      offset2 = phid*rand*(2*(rand > 0.5) - 1);
-      offset3 = phid*rand*(2*(rand > 0.5) - 1);
+        phi= phi_min+(phi_max-phi_min)*rand;
+        u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);%Select the interval (of points) in which the sag will be applied
+        for j=1:3
+          alpha=selectAmpPhase(alpha_min,alpha_max,phi_min,phi_max);%Select the sag parameters randomly
+          
+          offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+          
+          AFinal=A*(1-alpha*u); %The points of the sag will be multiplied by the factor alpha (their amplitude will decrease). The rest, no. 
 
-      u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);%Select the interval (of points) in which the sag will be applied
-      AFinal=A*(1-alpha*u); %The points of the sag will be multiplied by the factor alpha (their amplitude will decrease). The rest, no. 
-      AFinal2=A*(1-alpha2*u);
-      AFinal3=A*(1-alpha3*u);
+          out{j}(ClassNumber,:,i)= AFinal.*sin(2*pi*f*t- (phi + offset)); %Final distorted sample
 
-      AllSignals(ClassNumber,i,:)= AFinal.*sin(2*pi*f*t- (phi + offset)); %Final distorted sample
-      AllSignals2(ClassNumber,i,:)= AFinal2.*sin(2*pi*f*t-(phi-2*pi/3+ offset2));
-      AllSignals3(ClassNumber,i,:)= AFinal3.*sin(2*pi*f*t-(phi-4*pi/3+ offset3));
-
+        end
     end
 
     %% %%%%%%%%%%%Class 3 - Swell%%%%%%%%%%%%%%%%%
     ClassNumber=3;
     for i=1:1:ns
-      [beta,phi]=selectAmpPhase(beta_min,beta_max,phi_min,phi_max);
-      beta2=selectAmpPhase(beta_min,beta_max,phi_min,phi_max);
-      beta3=selectAmpPhase(beta_min,beta_max,phi_min,phi_max);
+        phi= phi_min+(phi_max-phi_min)*rand;
+        u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
+        for j=1:3
+            beta=selectAmpPhase(beta_min,beta_max,phi_min,phi_max);
 
-      offset = phid*rand*(2*(rand > 0.5) - 1);
-      offset2 = phid*rand*(2*(rand > 0.5) - 1);
-      offset3 = phid*rand*(2*(rand > 0.5) - 1);
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+           
+            AFinal=A*(1+beta*u); %The points of the sag will be multiplied by the factor beta (their amplitude will increase). The rest, no. 
+  
+            out{j}(ClassNumber,:,i)= AFinal.*sin(2*pi*f*t-(phi+offset)); %Final distorted sample
 
-      u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
-      AFinal=A*(1+beta*u); %The points of the sag will be multiplied by the factor beta (their amplitude will increase). The rest, no. 
-      AFinal2=A*(1+beta2*u);
-      AFinal3=A*(1+beta3*u);
-
-      AllSignals(ClassNumber,i,:)= AFinal.*sin(2*pi*f*t-(phi+offset)); %Final distorted sample
-      AllSignals2(ClassNumber,i,:)= AFinal2.*sin(2*pi*f*t-(phi-2*pi/3+offset2));
-      AllSignals3(ClassNumber,i,:)= AFinal3.*sin(2*pi*f*t-(phi-4*pi/3+offset3));
-
+        end
     end
 
 
     %% %%%%%%%%%%%Class 4 - Interruption%%%%%%%%%%%%%%%%%
     ClassNumber=4;
     for i=1:1:ns
-      [rho,phi]=selectAmpPhase(rho_min,rho_max,phi_min,phi_max);
-      [rho2,phi]=selectAmpPhase(rho_min,rho_max,phi_min,phi_max);
-      [rho3,phi]=selectAmpPhase(rho_min,rho_max,phi_min,phi_max);
-      
-      offset = phid*rand*(2*(rand > 0.5) - 1);
-      offset2 = phid*rand*(2*(rand > 0.5) - 1);
-      offset3 = phid*rand*(2*(rand > 0.5) - 1);
+        phi= phi_min+(phi_max-phi_min)*rand;
+        u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
+        for j=1:3
+            rho=selectAmpPhase(rho_min,rho_max,phi_min,phi_max);
+            
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+         
+            AFinal=A*(1-rho*u); %The points of the sag will be multiplied by the factor rho (their amplitude will increase much). The rest, no. 
+     
+            out{j}(ClassNumber,:,i)= AFinal.*sin(2*pi*f*t-(phi+offset)); %Final distorted sample
 
-      u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
-
-      AFinal=A*(1-rho*u); %The points of the sag will be multiplied by the factor rho (their amplitude will increase much). The rest, no. 
-      AFinal2=A*(1-rho2*u);
-      AFinal3=A*(1-rho3*u);
-
-      AllSignals(ClassNumber,i,:)= AFinal.*sin(2*pi*f*t-(phi+offset)); %Final distorted sample
-      AllSignals2(ClassNumber,i,:)= AFinal2.*sin(2*pi*f*t-(phi-2*pi/3+offset2));
-      AllSignals3(ClassNumber,i,:)= AFinal3.*sin(2*pi*f*t-(phi-4*pi/3+offset3));
+        end
     end
 
     %% %%%%%%%%%%%Class 5 - Transient/Impulse/Spike%%%%%%%%%%%%%%%%%
     ClassNumber=5; 
     for i=1:1:ns
-      phi=phi_min+(phi_max-phi_min)*rand;% Random number in the range phi_min-phi_max 
-      psi=psi_min+(psi_max-psi_min)*rand;
-      psi2=psi_min+(psi_max-psi_min)*rand;
-      psi3=psi_min+(psi_max-psi_min)*rand;
+        phi=phi_min+(phi_max-phi_min)*rand;% Random number in the range phi_min-phi_max 
+        %select transient interval (ocurrence point: tb-ta)
+        taPeriod=taPeriod_min+(taPeriod_max-taPeriod_min)*rand; 
+        ta=taPeriod*(1/f);
+        pointts=round(taPeriod*(fs/f));
+        u1=[zeros(1,pointts) ones(1,PointsPerSignal-pointts)]; %Step funcion, translated pointts to the right
+        u2=[zeros(1,pointts+Onems) ones(1,PointsPerSignal-(pointts+Onems))]; %Step funcion, translated (pointts+Onems) points to the right
+        u=u1-u2;%Unitary function with all 0 except the interval in which the transient occurs (all 0 except tb-ta)
+        %Final distorted sample
+        exp_sub=(exp(-750*(t-ta)))-(exp(-344*(t-ta)));
 
-      offset = phid*rand*(2*(rand > 0.5) - 1);
-      offset2 = phid*rand*(2*(rand > 0.5) - 1);
-      offset3 = phid*rand*(2*(rand > 0.5) - 1);
-
-      %select transient interval (ocurrence point: tb-ta)
-      taPeriod=taPeriod_min+(taPeriod_max-taPeriod_min)*rand; 
-      ta=taPeriod*(1/f);
-      pointts=round(taPeriod*(fs/f));
-      u1=[zeros(1,pointts) ones(1,PointsPerSignal-pointts)]; %Step funcion, translated pointts to the right
-      u2=[zeros(1,pointts+Onems) ones(1,PointsPerSignal-(pointts+Onems))]; %Step funcion, translated (pointts+Onems) points to the right
-      u=u1-u2;%Unitary function with all 0 except the interval in which the transient occurs (all 0 except tb-ta)
-      %Final distorted sample
-      exp_sub=(exp(-750*(t-ta)))-(exp(-344*(t-ta)));
-
-      AFinal=A*psi*exp_sub.*u; 
-      AFinal2=A*psi2*exp_sub.*u; 
-      AFinal3=A*psi3*exp_sub.*u; 
-
-      AllSignals(ClassNumber,i,:)= -AFinal+A*sin(2*pi*f*t-(phi+offset)); 
-      AllSignals2(ClassNumber,i,:)= -AFinal2+A*sin(2*pi*f*t-(phi-2*pi/3+offset2)); 
-      AllSignals3(ClassNumber,i,:)= -AFinal3+A*sin(2*pi*f*t-(phi-4*pi/3+offset3)); 
+        for j=1:3         
+            psi=psi_min+(psi_max-psi_min)*rand;
+            
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);     
+            
+            AFinal=A*psi*exp_sub.*u; 
+  
+            out{j}(ClassNumber,:,i)= -AFinal+A*sin(2*pi*f*t-(phi+offset)); 
+        end
     end
 
     %% %%%%%%%%%%%Class 6 - Oscillatory transient%%%%%%%%%%%%%%%%%
     ClassNumber=6; 
     for i=1:1:ns
-      phi= phi_min+(phi_max-phi_min)*rand;
+        phi= phi_min+(phi_max-phi_min)*rand;
+        [u,t1]=selectOscTranInterval(fs,f,PointsPerSignal,periodMinOT,periodMaxOT);%Select oscillatory transient occurrence interval and starting and ending points
+        for j =1:3
+            [beta,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);%Select oscillatory transient parameters  
+            
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);  
+            
+            out{j}(ClassNumber,:,i)= A*sin(2*pi*f*t-(phi+offset))+A*beta*exp(-(t-t1)/tau).*sin(2*pi*fn*(t-t1)-theta).*u; %Final distorted sample
 
-      [beta,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);%Select oscillatory transiente parameters
-      [beta2,fn,tau,theta2]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
-      [beta3,fn,tau,theta3]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
-
-      [u,t1]=selectOscTranInterval(fs,f,PointsPerSignal,periodMinOT,periodMaxOT);%Select oscillatory transient occurrence interval and starting and ending points
-      
-      offset = phid*rand*(2*(rand > 0.5) - 1);
-      offset2 = phid*rand*(2*(rand > 0.5) - 1);
-      offset3 = phid*rand*(2*(rand > 0.5) - 1);
-
-      AllSignals(ClassNumber,i,:)= A*sin(2*pi*f*t-(phi+offset))+A*beta*exp(-(t-t1)/tau).*sin(2*pi*fn*(t-t1)-theta).*u; %Final distorted sample
-      AllSignals2(ClassNumber,i,:)= A*sin(2*pi*f*t-(phi-2*pi/3+offset2))+A*beta2*exp(-(t-t1)/tau).*sin(2*pi*fn*(t-t1)-theta2).*u;
-      AllSignals3(ClassNumber,i,:)= A*sin(2*pi*f*t-(phi-4*pi/3+offset3))+A*beta3*exp(-(t-t1)/tau).*sin(2*pi*fn*(t-t1)-theta3).*u;
+        end
     end
 
     %% %%%%%%%%%%%Class 7 - Harmonics%%%%%%%%%%%%%%%%%
     ClassNumber=7;
     for i=1:1:ns
-      [alpha3,alpha5,theta1_o,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max);%Select harmonics parameters %%MOD
-      alpha7=alpha7_min+(alpha7_max-alpha7_min)*rand;
-      theta7=theta_min+(theta_max-theta_min)*rand;
-      
-      offset = phid*rand*(2*(rand > 0.5) - 1);
-      offset2 = phid*rand*(2*(rand > 0.5) - 1);
-      offset3 = phid*rand*(2*(rand > 0.5) - 1);
-
-      AllSignals(ClassNumber,i,:)= A*(alpha1*sin(2*pi*f*t-theta1_o+offset)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)+alpha7*sin(7*2*pi*f*t-theta7)); %Final distorted sample
-
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max);
-      alpha7=alpha7_min+(alpha7_max-alpha7_min)*rand;
-      theta7=theta_min+(theta_max-theta_min)*rand;
-      AllSignals2(ClassNumber,i,:)= A*(alpha1*sin(2*pi*f*t-theta1_o-2*pi/3+offset2)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)+alpha7*sin(7*2*pi*f*t-theta7));
-
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max);
-      alpha7=alpha7_min+(alpha7_max-alpha7_min)*rand;
-      theta7=theta_min+(theta_max-theta_min)*rand;
-      AllSignals3(ClassNumber,i,:)= A*(alpha1*sin(2*pi*f*t-theta1_o-4*pi/3+offset3)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)+alpha7*sin(7*2*pi*f*t-theta7));
+        phi= phi_min+(phi_max-phi_min)*rand;
+        for j=1:3
+            [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max);%Select harmonics parameters %%MOD
+            alpha7=alpha7_min+(alpha7_max-alpha7_min)*rand;
+            theta7=theta_min+(theta_max-theta_min)*rand;
+            
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);  
+             
+            out{j}(ClassNumber,:,i)= A*(alpha1*sin(2*pi*f*t-(phi+offset))+alpha3*sin(3*2*pi*f*t-theta3+offset)+alpha5*sin(5*2*pi*f*t-theta5+offset)+alpha7*sin(7*2*pi*f*t-theta7+offset)); %Final distorted sample
+     
+        end
     end
 
     %% %%%%%%%%%%%Class 8 - Harmonics with Sag%%%%%%%%%%%%%%%%%
     ClassNumber=8; 
     for i=1:1:ns
-    %Random sag interval selection
-      u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
+        phi= phi_min+(phi_max-phi_min)*rand;
+        %Random sag interval selection
+        u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
+     
+        for j =1:3
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);  
 
-      offset = phid*rand*(2*(rand > 0.5) - 1);
-      offset2 = phid*rand*(2*(rand > 0.5) - 1);
-      offset3 = phid*rand*(2*(rand > 0.5) - 1);
+            %Random amplitude and phase parameters selection
+            alpha=alpha_min+(alpha_max-alpha_min)*rand;
+            
+            [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
+            
+            %Final distorted sample
+            AFinal=A*(1-alpha*u);
+                       
+            out{j}(ClassNumber,:,i)= A*AFinal.*(alpha1*sin(2*pi*f*t-(phi+offset))+alpha3*sin(3*2*pi*f*t-theta3+offset)+alpha5*sin(5*2*pi*f*t-theta5+offset)); 
 
-      %Random amplitude and phase parameters selection
-      alpha=alpha_min+(alpha_max-alpha_min)*rand;
-      alpha_2=alpha_min+(alpha_max-alpha_min)*rand;
-      alpha_3=alpha_min+(alpha_max-alpha_min)*rand;
-
-      [alpha3,alpha5,theta1_o,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
-      
-      %Final distorted sample
-      AFinal=A*(1-alpha*u);
-      AFinal2=A*(1-alpha_2*u);
-      AFinal3=A*(1-alpha_3*u);
-
-    
-      AllSignals(ClassNumber,i,:)= A*AFinal.*(alpha1*sin(2*pi*f*t-theta1_o+offset)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)); 
-
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max);
-      AllSignals2(ClassNumber,i,:)= A*AFinal2.*(alpha1*sin(2*pi*f*t-theta1_o-2*pi/3+offset2)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)); 
-
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max);
-      AllSignals3(ClassNumber,i,:)= A*AFinal3.*(alpha1*sin(2*pi*f*t-theta1_o-4*pi/3+offset3)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)); 
-      
+        end
     end
 
     %% %%%%%%%%%%%Class 9 - Harmonics with Swell%%%%%%%%%%%%%%%%%
     ClassNumber=9;
     for i=1:1:ns
-      %Random amplitude and phase parameters selection
-      beta=beta_min+(beta_max-beta_min)*rand;
-      beta2=beta_min+(beta_max-beta_min)*rand;
-      beta3=beta_min+(beta_max-beta_min)*rand;
-      
-      offset = phid*rand*(2*(rand > 0.5) - 1);
-      offset2 = phid*rand*(2*(rand > 0.5) - 1);
-      offset3 = phid*rand*(2*(rand > 0.5) - 1);
+        phi= phi_min+(phi_max-phi_min)*rand;
+        %Random swell interval selection
+        u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
+        for j=1:3
 
-      [alpha3,alpha5,theta1_o,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max);%%MOD
-      %Random swell interval selection
-      u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
-
-      %Final distorted sample
-      AFinal=A*(1+beta*u);
-      AFinal2=A*(1+beta2*u);
-      AFinal3=A*(1+beta3*u);
-
-      AllSignals(ClassNumber,i,:)= A*AFinal.*(alpha1*sin(2*pi*f*t-theta1_o+offset)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)); 
-
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max);
-      AllSignals2(ClassNumber,i,:)= A*AFinal2.*(alpha1*sin(2*pi*f*t-theta1_o-2*pi/3+offset2)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)); 
-
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max);
-      AllSignals3(ClassNumber,i,:)= A*AFinal3.*(alpha1*sin(2*pi*f*t-theta1_o-4*pi/3+offset3)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)); 
+            %Random amplitude and phase parameters selection
+            beta=beta_min+(beta_max-beta_min)*rand;
+            
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+            
+            [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max);%%MOD
+                   
+            %Final distorted sample
+            AFinal=A*(1+beta*u);
+            
+            out{j}(ClassNumber,:,i)= A*AFinal.*(alpha1*sin(2*pi*f*t-(phi+offset))+alpha3*sin(3*2*pi*f*t-theta3+offset)+alpha5*sin(5*2*pi*f*t-theta5+offset));      
+           
+        end
     end
 
     %% %%%%%%%%%%%Class 10 - Flicker%%%%%%%%%%%%%%%%%
     ClassNumber=10;
     for i=1:1:ns
-      %Random flicker parameters selection
-      [lambda,ff,phi]=selectFlickerParam(lambda_min,lambda_max,ff_min,ff_max,phi_min,phi_max);
-      [lambda2,ff2,phi]=selectFlickerParam(lambda_min,lambda_max,ff_min,ff_max,phi_min,phi_max);
-      [lambda3,ff3,phi]=selectFlickerParam(lambda_min,lambda_max,ff_min,ff_max,phi_min,phi_max);
-      
-      offset = phid*rand*(2*(rand > 0.5) - 1);
-      offset2 = phid*rand*(2*(rand > 0.5) - 1);
-      offset3 = phid*rand*(2*(rand > 0.5) - 1);
+        phi= phi_min+(phi_max-phi_min)*rand;
+        for j=1:3
 
-      %Final distorted sample
-      AllSignals(ClassNumber,i,:)= A*sin(2*pi*f*t-phi+offset).*(1+lambda*sin(2*pi*ff*t));
-      AllSignals2(ClassNumber,i,:)= A*sin(2*pi*f*t-phi-2*pi/3+offset).*(1+lambda2*sin(2*pi*ff2*t));
-      AllSignals3(ClassNumber,i,:)= A*sin(2*pi*f*t-phi-4*pi/3+offset).*(1+lambda3*sin(2*pi*ff3*t));
+            %Random flicker parameters selection
+            [lambda,ff]=selectFlickerParam(lambda_min,lambda_max,ff_min,ff_max,phi_min,phi_max);
+            
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+
+            %Final distorted sample
+            out{j}(ClassNumber,:,i)= A*sin(2*pi*f*t-(phi+offset)).*(1+lambda*sin(2*pi*ff*t));
+
+        end
     end
-%% 
-    out= {AllSignals, AllSignals2, AllSignals3}; %Output matrix
-if 0 > -1
     %% %%%%%%%%%%%Class 11 - Flicker with Sag%%%%%%%%%%%%%%%%%
     ClassNumber=11;
     for i=1:1:ns
-      %Random amplitude, phase and frequency parameters selection
-      alpha=alpha_min+(alpha_max-alpha_min)*rand;
-      [lambda,ff,phi]=selectFlickerParam(lambda_min,lambda_max,ff_min,ff_max,phi_min,phi_max); 
-      %Random sag interval selection
-      u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
-      %Final distorted sample
-      AllSignals(ClassNumber,i,:)= (A*sin(2*pi*f*t-phi)).*(lambda*sin(2*pi*ff*t)+(1-alpha*u));
+        phi= phi_min+(phi_max-phi_min)*rand;
+        %Random sag interval selection
+        u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
+        for j=1:3
+            %Random amplitude, phase and frequency parameters selection
+            alpha=alpha_min+(alpha_max-alpha_min)*rand;
+            [lambda,ff]=selectFlickerParam(lambda_min,lambda_max,ff_min,ff_max,phi_min,phi_max); 
+            
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+
+            %Final distorted sample
+            out{j}(ClassNumber,:,i)= (A*sin(2*pi*f*t-(phi+offset))).*(lambda*sin(2*pi*ff*t)+(1-alpha*u));
+        end
     end
 
     %% %%%%%%%%%%%Class 12 - Flicker with Swell%%%%%%%%%%%%%%%%%
     ClassNumber=12;
     for i=1:1:ns
-      %Random amplitude, phase and frequency parameters selection
-      beta= beta_min+(beta_max-beta_min)*rand;
-      [lambda,ff,phi]=selectFlickerParam(lambda_min,lambda_max,ff_min,ff_max,phi_min,phi_max);  
-      %Random swell interval selection
-      u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
-      %Final distorted sample
-      AllSignals(ClassNumber,i,:)= (A*sin(2*pi*f*t-phi)).*(lambda*sin(2*pi*ff*t)+(1+beta*u));
+        phi= phi_min+(phi_max-phi_min)*rand;
+        %Random swell interval selection
+        u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
+        for j =1:3
+            %Random amplitude, phase and frequency parameters selection
+            beta= beta_min+(beta_max-beta_min)*rand;
+            [lambda,ff]=selectFlickerParam(lambda_min,lambda_max,ff_min,ff_max,phi_min,phi_max);  
+            
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+
+            %Final distorted sample
+            out{j}(ClassNumber,:,i)= (A*sin(2*pi*f*t-(phi+offset))).*(lambda*sin(2*pi*ff*t)+(1+beta*u));
+        end
     end
 
     %% %%%%%%%%%%%Class 13 - Sag with Oscillatory transient%%%%%%%%%%%%%%%%%
     ClassNumber=13;
     for i=1:1:ns
-      %Random selection of sag and oscillatory transient parameters
-      [alpha,phi]=selectAmpPhase(alpha_min,alpha_max,phi_min,phi_max);
-      [beta,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
-      %Random sag/osc transient interval selection
-      [u,utran,t1tran]=selectOscTranInSagSwellInterval(fs,f,PointsPerSignal,periodMin,periodMax,pointsfithpartperiod);
-      %Final distorted sample
-      AllSignals(ClassNumber,i,:)= A*sin(2*pi*f*t-phi).*(1-alpha*u)+A*beta*exp(-(t-t1tran)/tau).*sin(2*pi*fn*(t-t1tran)-theta).*utran;
+        phi= phi_min+(phi_max-phi_min)*rand;
+        %Random sag/osc transient interval selection
+        [u,utran,t1tran]=selectOscTranInSagSwellInterval(fs,f,PointsPerSignal,periodMin,periodMax,pointsfithpartperiod);
+        for j=1:3
+            %Random selection of sag and oscillatory transient parameters
+            alpha=selectAmpPhase(alpha_min,alpha_max,phi_min,phi_max);
+            [beta,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
+            
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+
+            %Final distorted sample
+            out{j}(ClassNumber,:,i)= A*sin(2*pi*f*t-(phi+offset)).*(1-alpha*u)+A*beta*exp(-(t-t1tran)/tau).*sin(2*pi*fn*(t-t1tran)-theta).*utran;
+        end
     end
 
     %% %%%%%%%%%%%Class 14 - Swell with Oscillatory transient%%%%%%%%%%%%%%%%%
     ClassNumber=14;
     for i=1:1:ns
-      %Random selection of swell and oscillatory transient parameters
-      [beta1,phi]=selectAmpPhase(beta_min,beta_max,phi_min,phi_max);
-      [beta2,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
-      %Random swell/osc. transient interval selection
-      [u,utran,t1tran]=selectOscTranInSagSwellInterval(fs,f,PointsPerSignal,periodMin,periodMax,pointsfithpartperiod);
-      %Final distorted sample
-      AllSignals(ClassNumber,i,:)= A*sin(2*pi*f*t-phi).*(1+beta1*u)+A*beta2*exp(-(t-t1tran)/tau).*sin(2*pi*fn*(t-t1tran)-theta).*utran;
+        phi= phi_min+(phi_max-phi_min)*rand;
+        %Random swell/osc. transient interval selection
+        [u,utran,t1tran]=selectOscTranInSagSwellInterval(fs,f,PointsPerSignal,periodMin,periodMax,pointsfithpartperiod);
+        for j=1:3
+            %Random selection of swell and oscillatory transient parameters
+            beta1=selectAmpPhase(beta_min,beta_max,phi_min,phi_max);
+            [beta2,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
+            
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+
+            %Final distorted sample
+            out{j}(ClassNumber,:,i)= A*sin(2*pi*f*t-(phi+offset)).*(1+beta1*u)+A*beta2*exp(-(t-t1tran)/tau).*sin(2*pi*fn*(t-t1tran)-theta).*utran;
+        end
     end
 
     %% %%%%%%%%%%%Class 15 - Sag with Harmonics%%%%%%%%%%%%%%%%%
     ClassNumber=15;
     for i=1:1:ns
-      %Random selection of sag and harmonics parameters
-      alpha=alpha_min+(alpha_max-alpha_min)*rand;
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
-      %Random sag interval selection
-      u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
-      %Final distorted sample
-      AllSignals(ClassNumber,i,:)= A*(alpha1*sin(2*pi*f*t-theta1)+(alpha1*sin(2*pi*f*t-theta1)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)).*(-alpha*u)); 
+        phi= phi_min+(phi_max-phi_min)*rand;
+        %Random sag interval selection
+        u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
+        for j =1:3
+            %Random selection of sag and harmonics parameters
+            alpha=alpha_min+(alpha_max-alpha_min)*rand;
+            [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
+            
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+
+            %Final distorted sample
+            out{j}(ClassNumber,:,i)= A*(alpha1*sin(2*pi*f*t-(phi+offset))+(alpha1*sin(2*pi*f*t-(phi+offset))+alpha3*sin(3*2*pi*f*t-theta3+offset)+alpha5*sin(5*2*pi*f*t-theta5+offset)).*(-alpha*u)); 
+        end
     end
 
     %% %%%%%%%%%%%Class 16 - Swell with Harmonics%%%%%%%%%%%%%%%%%
     ClassNumber=16;
     for i=1:1:ns
-      %Random selection of swell and harmonics parameters
-      beta=beta_min+(beta_max-beta_min)*rand;
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
-      %Random swell interval selection
-      u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
-      %Final distorted sample
-      AllSignals(ClassNumber,i,:)= A*(alpha1*sin(2*pi*f*t-theta1)+(alpha1*sin(2*pi*f*t-theta1)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)).*(beta*u)); 
+        phi= phi_min+(phi_max-phi_min)*rand;
+        %Random swell interval selection
+        u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
+        for j=1:3
+            %Random selection of swell and harmonics parameters
+            beta=beta_min+(beta_max-beta_min)*rand;
+            [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
+            
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+
+            %Final distorted sample
+            out{j}(ClassNumber,:,i)= A*(alpha1*sin(2*pi*f*t-(phi+offset))+(alpha1*sin(2*pi*f*t-(phi+offset))+alpha3*sin(3*2*pi*f*t-theta3+offset)+alpha5*sin(5*2*pi*f*t-theta5+offset)).*(beta*u)); 
+        end
     end
 
     %% %%%%%%%%%%%Class 17 - Notch%%%%%%%%%%%%%%%%%
     ClassNumber=17;
     for i=1:1:ns
         phi=phi_min+(phi_max-phi_min)*rand;
+
         %Select number of notchs per period randomly
         pos = randi(length(c));
         notch_number=c(pos);
@@ -537,206 +528,299 @@ if 0 > -1
             u=k*(u1-u2); %Difference function, 0 all except the interval (tc+T*nn,td+T*nn)
             ut=ut+u; %Final unitary function with all 0 except the notch occurrences
         end
-        %Final distorted sample
-        AllSignals(ClassNumber,i,:)=A*(sin(2*pi*f*t-phi)-sign(sin(2*pi*f*t-phi)).*ut);
+
+        for j=1:3
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+
+            %Final distorted sample
+            out{j}(ClassNumber,:,i)=A*(sin(2*pi*f*t-(phi+offset))-sign(sin(2*pi*f*t-(phi+offset))).*ut);
+        end
     end
 
     %% %%%%%%%%%%%Class 18 - Harmonics with Sag with Flicker%%%%%%%%%%%%%%%%%
     ClassNumber=18;
     for i=1:1:ns
-      %Selection of sag and harmonics parameters randomly
-      alpha=alpha_min+(alpha_max-alpha_min)*rand;
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
-      %Selection of flicker parameters randomly
-      lambda= lambda_min+(lambda_max-lambda_min)*rand;
-      ff= ff_min+(ff_max-ff_min)*rand;  
-      %Random sag interval selection
-      u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
-      %Final distorted sample
-      AFinal=A*(1-alpha*u);
-      AllSignals(ClassNumber,i,:)= A*AFinal.*(alpha1*sin(2*pi*f*t-theta1)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)).*(1+lambda*sin(2*pi*ff*t)); 
+        phi=phi_min+(phi_max-phi_min)*rand;
+        %Random sag interval selection
+        u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
+        for j=1:3
+            %Selection of sag and harmonics parameters randomly
+            alpha=alpha_min+(alpha_max-alpha_min)*rand;
+            [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
+            %Selection of flicker parameters randomly
+            lambda= lambda_min+(lambda_max-lambda_min)*rand;
+            ff= ff_min+(ff_max-ff_min)*rand;  
+
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+            
+            %Final distorted sample
+            AFinal=A*(1-alpha*u);
+            out{j}(ClassNumber,:,i)= A*AFinal.*(alpha1*sin(2*pi*f*t-(phi+offset))+alpha3*sin(3*2*pi*f*t-theta3+offset)+alpha5*sin(5*2*pi*f*t-theta5+offset)).*(1+lambda*sin(2*pi*ff*t)); 
+        end
     end
 
     %% %%%%%%%%%%%Class 19 - Harmonics with Swell with Flicker%%%%%%%%%%%%%%%%%
     ClassNumber=19;
     for i=1:1:ns
-      %Selection of sag and harmonics parameters randomly
-      beta=beta_min+(beta_max-beta_min)*rand;
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
-      %Selection of flicker parameters randomly
-      lambda= lambda_min+(lambda_max-lambda_min)*rand;
-      ff= ff_min+(ff_max-ff_min)*rand;  
-      %Random swell interval selection
-      u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
-      %Final distorted sample
-      AFinal=A*(1+beta*u);
-      AllSignals(ClassNumber,i,:)= A*AFinal.*(alpha1*sin(2*pi*f*t-theta1)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)).*(1+lambda*sin(2*pi*ff*t)); 
+        phi=phi_min+(phi_max-phi_min)*rand;
+        %Random swell interval selection
+        u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
+        for j=1:3
+            
+            %Selection of sag and harmonics parameters randomly
+            beta=beta_min+(beta_max-beta_min)*rand;
+            [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
+            %Selection of flicker parameters randomly
+            lambda= lambda_min+(lambda_max-lambda_min)*rand;
+            ff= ff_min+(ff_max-ff_min)*rand;  
+
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+            
+            %Final distorted sample
+            AFinal=A*(1+beta*u);
+            out{j}(ClassNumber,:,i)= A*AFinal.*(alpha1*sin(2*pi*f*t-(phi+offset))+alpha3*sin(3*2*pi*f*t-theta3+offset)+alpha5*sin(5*2*pi*f*t-theta5+offset)).*(1+lambda*sin(2*pi*ff*t)); 
+        end
     end
 
     %% %%%%%%%%%%%Class 20 - Sag with Harmonics with Flicker%%%%%%%%%%%%%%%%%
     ClassNumber=20;
     for i=1:1:ns
-      %Selection of sag and harmonics parameters randomly
-      alpha=alpha_min+(alpha_max-alpha_min)*rand;
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
-      %Selection of flicker parameters randomly
-      lambda= lambda_min+(lambda_max-lambda_min)*rand;
-      ff= ff_min+(ff_max-ff_min)*rand;  
-      %Random sag interval selection
-      u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin); 
-      %Final distorted sample
-      AllSignals(ClassNumber,i,:)= A*(alpha1*sin(2*pi*f*t-theta1)+(alpha1*sin(2*pi*f*t-theta1)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)).*(-alpha*u).*(1+lambda*sin(2*pi*ff*t))); 
+        phi=phi_min+(phi_max-phi_min)*rand;
+        %Random sag interval selection
+        u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
+        for j=1:3
+            %Selection of sag and harmonics parameters randomly
+            alpha=alpha_min+(alpha_max-alpha_min)*rand;
+            [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
+            %Selection of flicker parameters randomly
+            lambda= lambda_min+(lambda_max-lambda_min)*rand;
+            ff= ff_min+(ff_max-ff_min)*rand;  
+            
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+
+            %Final distorted sample
+            out{j}(ClassNumber,:,i)= A*(alpha1*sin(2*pi*f*t-(phi+offset))+(alpha1*sin(2*pi*f*t-(phi+offset))+alpha3*sin(3*2*pi*f*t-theta3+offset)+alpha5*sin(5*2*pi*f*t-theta5+offset)).*(-alpha*u).*(1+lambda*sin(2*pi*ff*t))); 
+        end
     end
 
     %% %%%%%%%%%%%Class 21 - Swell with Harmonics with Flicker%%%%%%%%%%%%%%%%%
     ClassNumber=21;
     for i=1:1:ns
-      %Selection of swell and harmonics parameters randomly
-      beta=beta_min+(beta_max-beta_min)*rand;
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
-      %Selection of flicker parameters randomly
-      lambda= lambda_min+(lambda_max-lambda_min)*rand;
-      ff= ff_min+(ff_max-ff_min)*rand;  
-      %Random swell interval selection
-      u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin); 
-      %Final distorted sample
-      AllSignals(ClassNumber,i,:)= A*(alpha1*sin(2*pi*f*t-theta1)+(alpha1*sin(2*pi*f*t-theta1)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)).*(beta*u).*(1+lambda*sin(2*pi*ff*t))); 
+        phi=phi_min+(phi_max-phi_min)*rand;
+        %Random swell interval selection
+        u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin); 
+        for j=1:3
+            %Selection of swell and harmonics parameters randomly
+            beta=beta_min+(beta_max-beta_min)*rand;
+            [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
+            %Selection of flicker parameters randomly
+            lambda= lambda_min+(lambda_max-lambda_min)*rand;
+            ff= ff_min+(ff_max-ff_min)*rand;  
+            
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+
+            %Final distorted sample
+            out{j}(ClassNumber,:,i)= A*(alpha1*sin(2*pi*f*t-(phi+offset))+(alpha1*sin(2*pi*f*t-(phi+offset))+alpha3*sin(3*2*pi*f*t-theta3+offset)+alpha5*sin(5*2*pi*f*t-theta5+offset)).*(beta*u).*(1+lambda*sin(2*pi*ff*t))); 
+        end
     end
 
     %% %%%%%%%%%%%Class 22 - Sag with Harmonics with Oscillatory transient%%%%%%%%%%%%%%%%%
     ClassNumber=22;
     for i=1:1:ns
-      %Selection of sag and harmonics parameters randomly
-      alpha= alpha_min+(alpha_max-alpha_min)*rand; 
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
-      %Selection of oscillatory transient parametras randomly
-      [beta,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
-      %Random sag/osc transient interval selection
-      [u,utran,t1tran]=selectOscTranInSagSwellInterval(fs,f,PointsPerSignal,periodMin,periodMax,pointsfithpartperiod);
-      %Final distorted sample
-      AllSignals(ClassNumber,i,:)= A*(alpha1*sin(2*pi*f*t-theta1)+(alpha1*sin(2*pi*f*t-theta1)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)).*(-alpha*u)+beta*exp(-(t-t1tran)/tau).*sin(2*pi*fn*(t-t1tran)-theta).*utran); %Final distorted function
+        phi=phi_min+(phi_max-phi_min)*rand;
+        %Random sag/osc transient interval selection
+        [u,utran,t1tran]=selectOscTranInSagSwellInterval(fs,f,PointsPerSignal,periodMin,periodMax,pointsfithpartperiod);
+        for j=1:3
+            %Selection of sag and harmonics parameters randomly
+            alpha= alpha_min+(alpha_max-alpha_min)*rand; 
+            [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
+            %Selection of oscillatory transient parametras randomly
+            [beta,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
+            
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+
+            %Final distorted sample
+            out{j}(ClassNumber,:,i)= A*(alpha1*sin(2*pi*f*t-(phi+offset))+(alpha1*sin(2*pi*f*t-(phi+offset))+alpha3*sin(3*2*pi*f*t-theta3+offset)+alpha5*sin(5*2*pi*f*t-theta5+offset)).*(-alpha*u)+beta*exp(-(t-t1tran)/tau).*sin(2*pi*fn*(t-t1tran)-theta).*utran); %Final distorted function
+        end
     end
 
     %% %%%%%%%%%%%Class 23 - Swell with Harmonics with Oscillatory transient%%%%%%%%%%%%%%%%%
     ClassNumber=23;
     for i=1:1:ns
-      %Selection of swell and harmonics parameters randomly
-      beta1= beta_min+(beta_max-beta_min)*rand;
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
-      %Selection of oscillatory transient parametras randomly
-      [beta2,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
-      %Random swell/osc transient interval selection
-      [u,utran,t1tran]=selectOscTranInSagSwellInterval(fs,f,PointsPerSignal,periodMin,periodMax,pointsfithpartperiod);
-      %Final distorted sample
-      AllSignals(ClassNumber,i,:)= A*(alpha1*sin(2*pi*f*t-theta1)+(alpha1*sin(2*pi*f*t-theta1)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)).*(beta1*u)+beta2*exp(-(t-t1tran)/tau).*sin(2*pi*fn*(t-t1tran)-theta).*utran); %Final distorted function
+        phi=phi_min+(phi_max-phi_min)*rand;
+        %Random swell/osc transient interval selection
+        [u,utran,t1tran]=selectOscTranInSagSwellInterval(fs,f,PointsPerSignal,periodMin,periodMax,pointsfithpartperiod);
+        for j=1:3
+            %Selection of swell and harmonics parameters randomly
+            beta1= beta_min+(beta_max-beta_min)*rand;
+            [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
+            %Selection of oscillatory transient parametras randomly
+            [beta2,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
+            
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+
+            %Final distorted sample
+            out{j}(ClassNumber,:,i)= A*(alpha1*sin(2*pi*f*t-(phi+offset))+(alpha1*sin(2*pi*f*t-(phi+offset))+alpha3*sin(3*2*pi*f*t-theta3+offset)+alpha5*sin(5*2*pi*f*t-theta5+offset)).*(beta1*u)+beta2*exp(-(t-t1tran)/tau).*sin(2*pi*fn*(t-t1tran)-theta).*utran); %Final distorted function
+        end
     end
     
     %% %%%%%%%%%%%Class 24 - Harmonics with Sag with Oscillatory transient%%%%%%%%%%%%%%%%%
     ClassNumber=24;
     for i=1:1:ns
-      %Selection of sag and harmonics parameters randomly
-      alpha= alpha_min+(alpha_max-alpha_min)*rand; 
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
-      %Random sag interval selection
-      u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
-      %Random oscillatory transient interval selection
-      [utran,t1tran]=selectOscTranInterval(fs,f,PointsPerSignal,periodMinOT,periodMaxOT);
-      %Selection of oscillatory transient parameters randomly
-      [beta,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
-      %Final distorted sample
-      AllSignals(ClassNumber,i,:)= A*((alpha1*sin(2*pi*f*t-theta1)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)).*(1-alpha*u)+beta*exp(-(t-t1tran)/tau).*sin(2*pi*fn*(t-t1tran)-theta).*utran); %Final distorted function
+        phi=phi_min+(phi_max-phi_min)*rand;
+        %Random sag interval selection
+        u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
+        %Random oscillatory transient interval selection
+        [utran,t1tran]=selectOscTranInterval(fs,f,PointsPerSignal,periodMinOT,periodMaxOT);
+        for j=1:3
+            %Selection of sag and harmonics parameters randomly
+            alpha= alpha_min+(alpha_max-alpha_min)*rand; 
+            [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
+                      
+            %Selection of oscillatory transient parameters randomly
+            [beta,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
+
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+
+            %Final distorted sample
+            out{j}(ClassNumber,:,i)= A*((alpha1*sin(2*pi*f*t-(phi+offset))+alpha3*sin(3*2*pi*f*t-theta3+offset)+alpha5*sin(5*2*pi*f*t-theta5+offset)).*(1-alpha*u)+beta*exp(-(t-t1tran)/tau).*sin(2*pi*fn*(t-t1tran)-theta).*utran); %Final distorted function
+        end
     end
 
     %% %%%%%%%%%%%Class 25 - Harmonics with Swell with Oscillatory transient%%%%%%%%%%%%%%%%%
     ClassNumber=25;
     for i=1:1:ns
-      %Selection of swell and harmonics parameters randomly
-      beta1= beta_min+(beta_max-beta_min)*rand;
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
-      %Random swell interval selection
-      u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
-      %Random oscillatory transient interval selection
-      [utran,t1tran]=selectOscTranInterval(fs,f,PointsPerSignal,periodMinOT,periodMaxOT);
-      %Selection of oscillatory transient parameters randomly
-      [beta2,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
-      %Final distorted sample
-      AllSignals(ClassNumber,i,:)= A*((alpha1*sin(2*pi*f*t-theta1)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)).*(1+beta1*u)+beta2*exp(-(t-t1tran)/tau).*sin(2*pi*fn*(t-t1tran)-theta).*utran); %Final distorted function
+        phi=phi_min+(phi_max-phi_min)*rand;
+        %Random swell interval selection
+        u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
+        %Random oscillatory transient interval selection
+        [utran,t1tran]=selectOscTranInterval(fs,f,PointsPerSignal,periodMinOT,periodMaxOT);
+        for j=1:3
+            %Selection of swell and harmonics parameters randomly
+            beta1= beta_min+(beta_max-beta_min)*rand;
+            [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD  
+            %Selection of oscillatory transient parameters randomly
+            [beta2,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
+
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+
+            %Final distorted sample
+            out{j}(ClassNumber,:,i)= A*((alpha1*sin(2*pi*f*t-(phi+offset))+alpha3*sin(3*2*pi*f*t-theta3+offset)+alpha5*sin(5*2*pi*f*t-theta5+offset)).*(1+beta1*u)+beta2*exp(-(t-t1tran)/tau).*sin(2*pi*fn*(t-t1tran)-theta).*utran); %Final distorted function
+        end
     end
 
     %% %%%%%%%%%%%Class 26 - Harmonics with Sag with Flicker with Oscillatory transient%%%%%%%%%%%%%%%%%
     ClassNumber=26;
     for i=1:1:ns
-      %Selection of sag and harmonics parameters randomly
-      alpha= alpha_min+(alpha_max-alpha_min)*rand; 
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
-      %Random sag interval selection
-      u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
-      %Flicker
-      lambda= lambda_min+(lambda_max-lambda_min)*rand;
-      ff= ff_min+(ff_max-ff_min)*rand;  
-      %Random oscillatory transient interval selection
-      [utran,t1tran]=selectOscTranInterval(fs,f,PointsPerSignal,periodMinOT,periodMaxOT);
-      %Selection of oscillatory transient parameters randomly
-      [beta,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
-      %Final distorted sample
-      AllSignals(ClassNumber,i,:)= A*(((alpha1*sin(2*pi*f*t-theta1)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)).*(1-alpha*u))+beta*exp(-(t-t1tran)/tau).*sin(2*pi*fn*(t-t1tran)-theta).*utran).*(1+lambda*sin(2*pi*ff*t)); %Final distorted function
+        phi=phi_min+(phi_max-phi_min)*rand;
+        %Random sag interval selection
+        u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
+        %Random oscillatory transient interval selection
+        [utran,t1tran]=selectOscTranInterval(fs,f,PointsPerSignal,periodMinOT,periodMaxOT);
+        for j=1:3
+            %Selection of sag and harmonics parameters randomly
+            alpha= alpha_min+(alpha_max-alpha_min)*rand; 
+            [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
+            
+            %Flicker
+            lambda= lambda_min+(lambda_max-lambda_min)*rand;
+            ff= ff_min+(ff_max-ff_min)*rand;  
+            
+            %Selection of oscillatory transient parameters randomly
+            [beta,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
+
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+
+            %Final distorted sample
+            out{j}(ClassNumber,:,i)= A*(((alpha1*sin(2*pi*f*t-(phi+offset))+alpha3*sin(3*2*pi*f*t-theta3+offset)+alpha5*sin(5*2*pi*f*t-theta5+offset)).*(1-alpha*u))+beta*exp(-(t-t1tran)/tau).*sin(2*pi*fn*(t-t1tran)-theta).*utran).*(1+lambda*sin(2*pi*ff*t)); %Final distorted function
+        end
     end
 
     %% %%%%%%%%%%%Class 27 - Harmonics with Swell with with Flicker with Oscillatory transient%%%%%%%%%%%%%%%%%
     ClassNumber=27;
     for i=1:1:ns
-      %Selection of swell and harmonics parameters randomly
-      beta1= beta_min+(beta_max-beta_min)*rand; 
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
-      %Random swell interval selection
-      u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
-      %Flicker
-      lambda= lambda_min+(lambda_max-lambda_min)*rand;
-      ff= ff_min+(ff_max-ff_min)*rand;  
-      %Random oscillatory transient interval selection
-      [utran,t1tran]=selectOscTranInterval(fs,f,PointsPerSignal,periodMinOT,periodMaxOT);
-      %Selection of oscillatory transient parameters randomly
-      [beta2,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
-      %Final distorted sample
-      AllSignals(ClassNumber,i,:)= A*(((alpha1*sin(2*pi*f*t-theta1)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)).*(1+beta1*u))+beta2*exp(-(t-t1tran)/tau).*sin(2*pi*fn*(t-t1tran)-theta).*utran).*(1+lambda*sin(2*pi*ff*t)); %Final distorted function
+        phi=phi_min+(phi_max-phi_min)*rand;
+        %Random swell interval selection
+        u=selectInterval(fs,f,PointsPerSignal,periodMax, periodMin);
+        %Random oscillatory transient interval selection
+        [utran,t1tran]=selectOscTranInterval(fs,f,PointsPerSignal,periodMinOT,periodMaxOT);
+        for j=1:3
+            %Selection of swell and harmonics parameters randomly
+            beta1= beta_min+(beta_max-beta_min)*rand; 
+            [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
+            
+            %Flicker
+            lambda= lambda_min+(lambda_max-lambda_min)*rand;
+            ff= ff_min+(ff_max-ff_min)*rand;  
+            
+            %Selection of oscillatory transient parameters randomly
+            [beta2,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
+
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+
+            %Final distorted sample
+            out{j}(ClassNumber,:,i)= A*(((alpha1*sin(2*pi*f*t-(phi+offset))+alpha3*sin(3*2*pi*f*t-theta3+offset)+alpha5*sin(5*2*pi*f*t-theta5+offset)).*(1+beta1*u))+beta2*exp(-(t-t1tran)/tau).*sin(2*pi*fn*(t-t1tran)-theta).*utran).*(1+lambda*sin(2*pi*ff*t)); %Final distorted function
+        end
     end
 
     %% %%%%%%%%%%%Class 28 - Sag with Harmonics with Flicker with Oscillatory transient%%%%%%%%%%%%%%%%%
     ClassNumber=28;
     for i=1:1:ns
-      %Selection of sag and harmonics parameters randomly
-      alpha= alpha_min+(alpha_max-alpha_min)*rand; 
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
-      %Flicker
-      lambda= lambda_min+(lambda_max-lambda_min)*rand;
-      ff= ff_min+(ff_max-ff_min)*rand;
-      %Random sag/osc. transient interval selection
-      [u,utran,t1tran]=selectOscTranInSagSwellInterval(fs,f,PointsPerSignal,periodMin,periodMax,pointsfithpartperiod);
-      %Selection of oscillatory transient parameters randomly
-      [beta,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
-      %Final distorted sample
-      AllSignals(ClassNumber,i,:)= A*(alpha1*sin(2*pi*f*t-theta1)+((alpha1*sin(2*pi*f*t-theta1)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)).*(-alpha*u)+beta*exp(-(t-t1tran)/tau).*sin(2*pi*fn*(t-t1tran)-theta).*utran).*(1+lambda*sin(2*pi*ff*t))); %Final distorted function
+        phi=phi_min+(phi_max-phi_min)*rand;
+        %Random sag/osc. transient interval selection
+        [u,utran,t1tran]=selectOscTranInSagSwellInterval(fs,f,PointsPerSignal,periodMin,periodMax,pointsfithpartperiod);
+        for j=1:3
+            %Selection of sag and harmonics parameters randomly
+            alpha= alpha_min+(alpha_max-alpha_min)*rand; 
+            [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
+            %Flicker
+            lambda= lambda_min+(lambda_max-lambda_min)*rand;
+            ff= ff_min+(ff_max-ff_min)*rand;
+            
+            %Selection of oscillatory transient parameters randomly
+            [beta,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
+
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+
+            %Final distorted sample
+            out{j}(ClassNumber,:,i)= A*(alpha1*sin(2*pi*f*t-(phi+offset))+((alpha1*sin(2*pi*f*t-(phi+offset))+alpha3*sin(3*2*pi*f*t-theta3+offset)+alpha5*sin(5*2*pi*f*t-theta5+offset)).*(-alpha*u)+beta*exp(-(t-t1tran)/tau).*sin(2*pi*fn*(t-t1tran)-theta).*utran).*(1+lambda*sin(2*pi*ff*t))); %Final distorted function
+        end
     end
 
     %% %%%%%%%%%%%Class 29 - Swell with Harmonics with Flicker with Oscillatory transient%%%%%%%%%%%%%%%%%
     ClassNumber=29; %ID of the class
     for i=1:1:ns
-      %Selection of swell and harmonics parameters randomly
-      beta1= beta_min+(beta_max-beta_min)*rand;
-      [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
-      %Flicker
-      lambda= lambda_min+(lambda_max-lambda_min)*rand;
-      ff= ff_min+(ff_max-ff_min)*rand;
-      %Random sag/osc. transient interval selection
-      [u,utran,t1tran]=selectOscTranInSagSwellInterval(fs,f,PointsPerSignal,periodMin,periodMax,pointsfithpartperiod);
-      %Selection of oscillatory transient parameters randomly
-      [beta2,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
-      %Final distorted sample
-      AllSignals(ClassNumber,i,:)= A*(alpha1*sin(2*pi*f*t-theta1)+((alpha1*sin(2*pi*f*t-theta1)+alpha3*sin(3*2*pi*f*t-theta3)+alpha5*sin(5*2*pi*f*t-theta5)).*(beta1*u)+beta2*exp(-(t-t1tran)/tau).*sin(2*pi*fn*(t-t1tran)-theta).*utran).*(1+lambda*sin(2*pi*ff*t))); %Final distorted function
+        phi=phi_min+(phi_max-phi_min)*rand;
+        %Random sag/osc. transient interval selection
+        [u,utran,t1tran]=selectOscTranInSagSwellInterval(fs,f,PointsPerSignal,periodMin,periodMax,pointsfithpartperiod);
+        for j=1:3
+            %Selection of swell and harmonics parameters randomly
+            beta1= beta_min+(beta_max-beta_min)*rand;
+            [alpha3,alpha5,theta1,theta3,theta5]=selectHarmParam(alpha3_min,alpha3_max,alpha5_min,alpha5_max,theta_min,theta_max); %%MOD
+            %Flicker
+            lambda= lambda_min+(lambda_max-lambda_min)*rand;
+            ff= ff_min+(ff_max-ff_min)*rand;
+            
+            %Selection of oscillatory transient parameters randomly
+            [beta2,fn,tau,theta]=selectOscTranParam(beta_min,beta_max,fn_min,fn_max,tau_min,tau_max,theta_min,theta_max);
+
+            offset = phases(j) + phid*rand*(2*(rand > 0.5) - 1);
+
+            %Final distorted sample
+            out{j}(ClassNumber,:,i)= A*(alpha1*sin(2*pi*f*t-(phi+offset))+((alpha1*sin(2*pi*f*t-(phi+offset))+alpha3*sin(3*2*pi*f*t-theta3+offset)+alpha5*sin(5*2*pi*f*t-theta5+offset)).*(beta1*u)+beta2*exp(-(t-t1tran)/tau).*sin(2*pi*fn*(t-t1tran)-theta).*utran).*(1+lambda*sin(2*pi*ff*t))); %Final distorted function
+        end
     end
-    %% %%%%%%---------------------%%%%%%%%
-    out= {AllSignals, AllSignals2, AllSignals3}; %Output matrix
-end
+    %% %%%%%% Adding Noise %%%%%%%%
+    if noise
+        for i = 1:29
+            for j=1:1:ns
+                nrs= nrs_min+(nrs_max-nrs_min)*rand;
+                for k = 1:3 
+                    out{k}(i,:,j) = awgn(out{k}(i,:,j), nrs, "measured");
+                end
+            end
+        end
+    end
 end
 
 %%%%%%%%%%%%%%%%%%% AUXILIARY FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
